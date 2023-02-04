@@ -4,6 +4,5 @@ mod error;
 pub mod file;
 pub mod match_udf;
 pub mod metadata;
-pub mod str;
 
 pub use error::{ZnError, ZnResult};

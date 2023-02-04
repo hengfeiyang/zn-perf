@@ -12,8 +12,6 @@ use datafusion::{
 use once_cell::sync::Lazy;
 use std::sync::Arc;
 
-use super::str;
-
 /// The name of the match UDF given to DataFusion.
 pub const MATCH_UDF_NAME: &str = "str_match";
 
@@ -74,11 +72,16 @@ pub fn match_expr_impl(case_insensitive: bool) -> ScalarFunctionImplementation {
                     // in arrow, any value can be null.
                     // Here we decide to make our UDF to return null when either haystack or needle is null.
                     (Some(haystack), Some(needle)) => match case_insensitive {
-                        true => Some(str::find(
-                            haystack.to_lowercase().as_str(),
-                            needle.to_lowercase().as_str(),
-                        )),
-                        false => Some(str::find(haystack, needle)),
+                        true => Some(
+                            memchr::memmem::find(
+                                haystack.to_lowercase().as_bytes(),
+                                needle.to_lowercase().as_bytes(),
+                            )
+                            .is_some(),
+                        ),
+                        false => Some(
+                            memchr::memmem::find(haystack.as_bytes(), needle.as_bytes()).is_some(),
+                        ),
                     },
                     _ => None,
                 }

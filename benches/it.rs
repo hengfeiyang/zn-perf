@@ -67,7 +67,7 @@ fn bench_arrow_search(c: &mut Criterion) {
         .measurement_time(Duration::from_secs(8))
         .throughput(Throughput::Bytes(size as u64));
 
-    for batch_size in [128, 256, 512, 1024, 4096, 8192] {
+    for batch_size in [1024, 4096, 8192] {
         group.bench_function(BenchmarkId::from_parameter(batch_size), |b| {
             b.iter_batched(
                 || new_parquet_arrow_reader(batch_size),
@@ -200,11 +200,17 @@ fn bench_datafusion_search_memchr(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(total_size));
 
     for batch_size in [1024, 4096, 8192] {
-        for op in ["str_match"] {
+        for op in ["like", "str_match"] {
             for optimized_p in [false] {
                 let where_clause = text_columns
                     .iter()
-                    .map(|column| format!("str_match(\"{column}\", 'k8s')"))
+                    .map(|column| {
+                        if op == "like" {
+                            format!("\"{column}\" like '%k8s%'")
+                        } else {
+                            format!("str_match(\"{column}\", 'k8s') ")
+                        }
+                    })
                     .join(" or ");
                 let sql = format!("select * from tbl where {where_clause}");
 
