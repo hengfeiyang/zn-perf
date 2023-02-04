@@ -9,6 +9,8 @@ use parquet::{
 use std::{env, fs, time::Duration};
 use tokio::runtime::Runtime;
 
+use zn_perf::match_udf;
+
 fn parquet_sample_path() -> String {
     env::var("FILE").expect("Set FILE environment variable")
 }
@@ -93,8 +95,8 @@ fn bench_datafusion_queries(c: &mut Criterion) {
 
     let rt = Runtime::new().unwrap();
     for query in QUERIES {
-        for batch_size in [128, 256, 512, 1024, 4096, 8192] {
-            for optimized_p in [true, false] {
+        for batch_size in [1024, 4096, 8192] {
+            for optimized_p in [false] {
                 group.bench_function(
                     BenchmarkId::from_parameter(format!(
                         "{batch_size}-O{}/{query}",
@@ -138,9 +140,9 @@ fn bench_datafusion_search(c: &mut Criterion) {
     let mut group = c.benchmark_group("datafusion/search");
     group.throughput(Throughput::Bytes(total_size));
 
-    for batch_size in [128, 256, 512, 1024, 4096, 8192] {
+    for batch_size in [1024, 4096, 8192] {
         for op in ["like", "strpos"] {
-            for optimized_p in [true, false] {
+            for optimized_p in [false] {
                 let where_clause = text_columns
                     .iter()
                     .map(|column| {
@@ -176,11 +178,66 @@ fn bench_datafusion_search(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_datafusion_search_memchr(c: &mut Criterion) {
+    let f = fs::File::open(parquet_sample_path()).unwrap();
+    let mut total_size = 0; // uncompressed size of text columns
+    let text_columns = zn_perf::metadata::text_columns(&f)
+        .unwrap()
+        .into_iter()
+        .filter_map(|(name, size)| {
+            // HACK: `SessionContext::sql()` doesn't like "@timestamp" column:
+            // ```
+            // thread 'main' panicked at 'called `Result::unwrap()` on an `Err` value: Execution("variable [\"@timestamp\"] has no type information")'
+            // ```
+            (name != "@timestamp").then(|| {
+                total_size += size;
+                name
+            })
+        })
+        .collect_vec();
+
+    let mut group = c.benchmark_group("datafusion/searchUDF");
+    group.throughput(Throughput::Bytes(total_size));
+
+    for batch_size in [1024, 4096, 8192] {
+        for op in ["str_match"] {
+            for optimized_p in [false] {
+                let where_clause = text_columns
+                    .iter()
+                    .map(|column| format!("str_match(\"{column}\", 'k8s')"))
+                    .join(" or ");
+                let sql = format!("select * from tbl where {where_clause}");
+
+                let rt = Runtime::new().unwrap();
+                group.bench_function(
+                    BenchmarkId::from_parameter(format!(
+                        "{batch_size}-O{}/{op}",
+                        optimized_p as u8
+                    )),
+                    |b| {
+                        b.to_async(&rt).iter(|| async {
+                            let ctx = new_datafusion_session_context(batch_size, optimized_p).await;
+                            ctx.register_udf(match_udf::MATCH_UDF.clone());
+                            let df = ctx.sql(&sql).await.unwrap();
+                            let mut stream = df.execute_stream().await.unwrap();
+                            while let Some(batch) = stream.next().await {
+                                let _ = batch.unwrap().num_rows();
+                            }
+                        })
+                    },
+                );
+            }
+        }
+    }
+    group.finish();
+}
+
 criterion_group!(
     benches,
-    bench_file_search,
+    // bench_file_search,
     bench_arrow_search,
-    bench_datafusion_queries,
+    // bench_datafusion_queries,
     bench_datafusion_search,
+    bench_datafusion_search_memchr,
 );
 criterion_main!(benches);

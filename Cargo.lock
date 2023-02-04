@@ -312,6 +312,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "async_once"
+version = "0.2.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2ce4f10ea3abcd6617873bae9f91d1c5332b4a778bd9ce34d0cd517474c1de82"
+
+[[package]]
 name = "atty"
 version = "0.2.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2567,6 +2573,7 @@ dependencies = [
  "arrow",
  "arrow-array",
  "arrow-schema",
+ "async_once",
  "bytes",
  "clap 4.1.1",
  "criterion",
@@ -2574,6 +2581,7 @@ dependencies = [
  "futures",
  "itertools",
  "memchr",
+ "once_cell",
  "parquet",
  "thiserror",
  "tokio",
